@@ -32,6 +32,7 @@ Some functionalities and even new tools have been added by the contributors belo
 
  *David O'Callaghan https://github.com/davidoc
   Added new options: dryrun, noclobber and up/download streams
+  Added lcg-rec-lr
   He's also maintaining this code at: https://github.com/davidoc/lcg-rec-tools
  
  *Nikolaos Charitonides <charitonick@math.ntua.gr>
