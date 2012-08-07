@@ -30,7 +30,7 @@ Some functionalities and even new tools have been added by the contributors belo
  *Mark Santcroos <M.A.Santcroos@amc.uva.nl>
   Created the lcg-rec-rep tool 
 
- *David O'Callaghan <david.ocallaghan@cs.tcd.ie>
+ *David O'Callaghan https://github.com/davidoc
   Added new options: dryrun, noclobber and up/download streams
   He's also maintaining this code at: https://github.com/davidoc/lcg-rec-tools
  
