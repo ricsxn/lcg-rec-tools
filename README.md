@@ -35,7 +35,7 @@ Some functionalities and even new tools have been added by the contributors belo
   Added lcg-rec-lr
   He's also maintaining this code at: https://github.com/davidoc/lcg-rec-tools
  
- *Nikolaos Charitonides <charitonick@math.ntua.gr>
+ *Nikolaos Charitonidis <nikolaos.charitonidis@cern.ch>
   Early adopter/tester of the lcg-rec-tools 
 
 More information are available at: http://gilda.ct.infn.it/wikimain?p_p_id=54_INSTANCE_t9W0&p_p_lifecycle=0&p_p_state=normal&p_p_mode=view&p_p_col_id=column-2&p_p_col_count=1&_54_INSTANCE_t9W0_struts_action=%2Fwiki_display%2Fview&_54_INSTANCE_t9W0_nodeName=Main&_54_INSTANCE_t9W0_title=Lcg-rec-tools
