@@ -1,0 +1,274 @@
+#!/bin/sh
+#
+# lcg-rec-del - Riccardo Bruno 20070725 <riccardo.bruno@ct.infn.it>
+#
+# Recursive lcg del command; remove files from catalog and related replicas
+#
+# Changelog
+#
+# 20101030 Options: dryrun added
+#
+
+#lcg_cp_prepare_params
+lcg_cp_prepare_params()
+{
+      PARAMS=
+      if [ -n "${LFCRECDL_VO}" ]
+      then
+        PARAMS=$PARAMS" --vo "$LFCRECDL_VO
+      fi
+      if [ -n "${LFCRECDL_CP}" ]
+      then
+        PARAMS=$PARAMS" lfn:"$DIRPATH/$file
+      fi
+      if [ -n "${LFCRECDL_FC}" ]
+      then
+        export LFC_HOST=$LFCRECDL_FC
+      fi
+}
+
+#parse arguments
+parse_arguments()
+{
+  LFCRECDL_VO=
+  LFCRECDL_FC=
+  LFCRECDL_CP=
+  LFCRECDL_V=
+  LFCRECDL_DR=
+  LFCRECDL_TB=
+  NEEDHELP="N"
+  PARAM=
+  for opt in $ARGS
+  do 
+    OPTSIGN=$(echo ${opt} | awk '{ print substr($1,1,1) }') 
+    if [ -n "${PARAM}" -a "${OPTSIGN}" != "-"  ]
+    then
+      case $PARAM in
+        "TB" ) LFCRECDL_TB=$opt ;;
+        "VO" ) LFCRECDL_VO=$opt ;;
+        "CP" ) LFCRECDL_CP=$opt ;;
+        "FC" ) LFCRECDL_FC=$opt ;;        
+      esac 
+      PARAM=
+    fi
+    case $opt in
+      "--tb"      | "-tb"  ) PARAM="TB"      ;;
+      "--vo"      | "-vo"  ) PARAM="VO"      ;;
+      "--cp"      | "-cp"  ) PARAM="CP"      ;;
+      "--fc"      | "-fc"  ) PARAM="FC"      ;;
+      "--dryrun"  | "-dr"  ) LFCRECDL_DR="Y" ;;      
+      "--help"    | "-h"   ) NEEDHELP="Y"    ;; 
+      "--verbose" | "-v"   ) LFCRECDL_V="Y"  ;;
+    esac
+  done
+}
+
+show_usage()
+{
+  echo "lcg-rec-del"
+  echo "----------"
+  echo "LCG utils based recursive delete from file catalog utility and related replicas"
+  echo " "
+  echo "Usage: `basename $0` -vo <voname> -cp <catalog_path> [-fc <file_catalog>] [-v] [-dr]"
+  echo " "
+  echo "        --vo | -vo  Virtual Organization"
+  echo "        --cp | -cp  Catalog Path"
+  echo "        --fc | -fc  File Catalog"
+  echo "   --verbose | -v   Shows info and commands executed"
+  echo "    --dryrun | -dr  View only commands without executing them"     
+  echo "      --help | -h   Shows this help" 
+  echo " "
+}
+
+#check arguments
+check_arguments()
+{
+  if [ "${NEEDHELP}" != "Y" ]
+  then
+    ERROR=
+    NEWLN="\n"
+    TABSP="\t"
+    if [ -z "$LFCRECDL_TB" ]
+    then
+      LFCRECDL_TB=0
+    fi
+    if [ -z "${LFCRECDL_FC}" ]
+    then
+      if [ -n "${LFC_HOST}" ]
+      then
+         if [ -n "${LFCRECDL_V}" ]
+         then
+           ERROR=$ERROR$TABSP"Warning: Defafault LFC server: '"$LFC_HOST"' will be used"$NEWLN
+         fi
+      else
+        ERROR=$ERROR$TABSP"LFC_HOST environment variable or -fc option must be specified with a LFC host server"$NEWLN
+        NEEDHELP="Y"
+      fi
+    fi
+    if [ -z "${LFCRECDL_VO}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a virtual organization"$NEWLN
+     NEEDHELP="Y"
+    fi
+    if [ -z "${LFCRECDL_CP}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a catalog path"$NEWLN
+      NEEDHELP="Y"
+    fi
+    if [ -n "${ERROR}"  -a $LFCRECDL_TB -eq 0 ]
+    then
+      echo "Errors:"
+      echo -e $ERROR    
+    fi
+  fi
+}
+
+calc_indlevel()
+{
+  LNTABS=
+  if [ $LFCRECDL_TB -gt 0 ]
+  then
+    for t in $(seq 1 $LFCRECDL_TB)
+    do
+      LNTABS=$LNTABS"\t"
+    done  
+  fi
+}
+
+#
+# lcg-rec-del
+#
+
+#parse the command line
+if [ $# -ne 0 ]
+then
+  ARGS=$*
+  parse_arguments
+  check_arguments  
+else
+  NEEDHELP="Y"
+fi
+
+#view verbose summary info
+if [ -n "${LFCRECDL_V}" -a "${LFCRECDL_TB}" == "0" ]
+then
+  echo "lcg-rec-del"
+  echo "----------"
+  echo "VO          : "$LFCRECDL_VO
+  echo "LFC         : "$LFCRECDL_FC
+  echo "Catalog path: "$LFCRECDL_CP
+  DRMODE="off"
+  if [ -n "${LFCRECDL_DR}" ]
+  then
+   DRMODE="on" 
+  fi
+  echo "Dry run     : "$DRMODE
+  echo " "
+fi
+
+#view help or execute
+if [ $NEEDHELP == "Y" ] 
+then 
+  show_usage
+else
+  if [ -n "${LFCRECDL_DR}" ]
+  then
+    LFCRECDL_V="Y"
+  fi
+  #calculate indirection level
+  calc_indlevel
+  #directory or file
+  FLAG=$(lfc-ls -ld ${LFCRECDL_CP} | awk '{ print substr($1,1,1) }')
+  if [ "${FLAG}" == "d" ]
+  then
+    #directory name
+    DIRPATH=$(echo ${LFCRECDL_CP} | sed 's/\/\//\//g')
+    
+    #process files before
+    FILES=$(lfc-ls -l  ${LFCRECDL_CP} | awk '{ if(substr($1,1,1)!="d" && substr($1,1,1)!="l") print $9 }')
+    for file in $FILES
+    do      
+      #prepare PARAMS for lfc-cr
+      lcg_cp_prepare_params
+      if [ -n "${LFCRECDL_V}" ]
+      then
+        echo -e $LNTABS"lcg-del -a "$PARAMS
+      fi
+      #
+      # lcg-del
+      #
+      if [ ! -n "${LFCRECDL_DR}" ]
+      then
+        lcg-del -a $PARAMS      
+      fi
+    done
+    
+    #delete sub-directories then
+    SUBDIRS=$(lfc-ls -l  ${LFCRECDL_CP} | awk '{ if(substr($1,1,1)=="d") print $9 }')
+    if [ -n "$SUBDIRS" ]
+    then
+      LFCRECDL_TB=$(($LFCRECDL_TB+1))
+    fi
+    for dir in $SUBDIRS
+    do  
+      #prepare arguments for the recursive call to $0    
+      VOPT=
+      if [ -n "${LFCRECDL_V}" ]
+      then        
+        VOPT="-v"
+      fi
+      FCOPT=
+      if [ -n "${LFCRECDL_FC}" ]
+      then        
+        FCOPT="-fc "$LFCRECDL_FC
+      fi
+      if [ -n "${LFCRECDL_DR}" ]
+      then        
+        DROPT="-dr"
+      fi
+      CATALOGPATH=$(echo ${LFCRECDL_CP}/$dir | sed 's/\/\//\//g')
+      LOCALPATH=$(echo ${DIRPATH}/$dir | sed 's/\/\//\//g')
+      #recursive call to $0
+      $0 -vo $LFCRECDL_VO $VOPT $FCOPT $SEOPT $DROPT -lp $LOCALPATH -cp $CATALOGPATH -tb $LFCRECDL_TB
+    done
+    
+    # delete current dir
+    #prepare PARAMS for lfc-cr
+    file=
+    lcg_cp_prepare_params
+    if [ -n "${LFCRECDL_V}" ]
+    then
+      echo -e $LNTABS"lfc-rm -r "$DIRPATH
+    fi
+    #
+    # lfc-rm
+    #
+    if [ ! -n "${LFCRECDL_DR}" ]
+    then
+      lfc-rm -r $DIRPATH      
+    fi
+  elif [ "${FLAG}" == "-" ]
+  then
+    # It's a file
+    #file name
+    FILEPATH=$(echo ${LFCRECDL_CP} | sed 's/\/\//\//g')
+    file=$FILEPATH
+    lcg_cp_prepare_params
+    if [ -n "${LFCRECDL_V}" ]
+    then
+      echo -e $LNTABS"lcg-del -a "$PARAMS
+    fi
+    #
+    # lcg-del
+    #
+    if [ ! -n "${LFCRECDL_DR}" ]
+    then
+      lcg-del -a $PARAMS  
+    fi
+  else
+    echo "Error: The local path '"$LFCRECDL_LP"' is not valid"
+  fi
+fi
+
+
+

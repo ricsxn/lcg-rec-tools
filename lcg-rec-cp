@@ -1,0 +1,326 @@
+#!/bin/sh
+#
+# lcg-rec-cp - Riccardo Bruno 20070725 <riccardo.bruno@ct.infn.it>
+#
+# Recursive lcg copy command
+#
+# Changelog
+#
+# 20100723 David O'Callaghan <david.ocallaghan@cs.tcd.ie>
+# Options: dryrun, noclobber and streams added
+#
+
+#lcg_cp_prepare_params
+lcg_cp_prepare_params()
+{
+      DOCMD=1
+      PARAMS=
+      if [ -n "${LFCRECCP_VO}" ]
+      then
+        PARAMS=$PARAMS" --vo "$LFCRECCP_VO
+      fi
+      if [ -n "${LFCRECCP_S}" ]
+      then
+        PARAMS=$PARAMS" -n "$LFCRECCP_S
+      fi
+      if [ -n "${LFCRECCP_CP}" ]
+      then
+        PARAMS=$PARAMS" lfn:"$LFCRECCP_CP/$file
+      fi
+      if [ -n "${LFCRECCP_LP}" ]
+      then
+        FILEPATH=$(echo $DIRPATH/$file" "$(pwd) |  awk '{ if(substr($1,1,1)=="/") print $1; else print $2"/"$1}')
+        PARAMS=$PARAMS" file:"$FILEPATH       
+        if [ -f $FILEPATH ]
+        then
+          if [ -n "${LFCRECCP_NC}" ]
+          then
+            echo "Info: $FILEPATH already exists. Skipping."
+            PARAMS=" --version > /dev/null"
+            DOCMD=0
+          else 
+            echo "Warning: $FILEPATH already exists"
+          fi
+        fi
+      fi      
+      if [ -n "${LFCRECCP_FC}" ]
+      then
+        export LFC_HOST=$LFCRECCP_FC
+      fi
+}
+
+#parse arguments
+parse_arguments()
+{
+  LFCRECCP_VO=
+  LFCRECCP_FC=
+  LFCRECCP_LP=
+  LFCRECCP_CP=
+  LFCRECCP_V=
+  LFCRECCP_TB=
+  LFCRECCP_S=1
+  LFCRECCP_NC=
+  LFCRECCP_DR=
+  NEEDHELP="N"
+  PARAM=
+  for opt in $ARGS
+  do 
+    OPTSIGN=$(echo ${opt} | awk '{ print substr($1,1,1) }') 
+    if [ -n "${PARAM}" -a "${OPTSIGN}" != "-"  ]
+    then
+      case $PARAM in
+        "TB" ) LFCRECCP_TB=$opt ;;
+        "VO" ) LFCRECCP_VO=$opt ;;
+        "LP" ) LFCRECCP_LP=$opt ;;
+        "CP" ) LFCRECCP_CP=$opt ;;
+        "FC" ) LFCRECCP_FC=$opt ;;
+         "S" )  LFCRECCP_S=$opt ;; 
+      esac 
+      PARAM=
+    fi
+    case $opt in
+      "--tb"        | "-tb"  )       PARAM="TB" ;;
+      "--vo"        | "-vo"  )       PARAM="VO" ;;
+      "--lp"        | "-lp"  )       PARAM="LP" ;;
+      "--cp"        | "-cp"  )       PARAM="CP" ;;
+      "--fc"        | "-fc"  )       PARAM="FC" ;;
+      "--streams"   |  "-s"  )       PARAM="S"  ;;      
+      "--noclobber" | "-nc"  ) LFCRECCP_NC="Y"  ;;      
+      "--dryrun"    | "-dr"  ) LFCRECCP_DR="Y"  ;;     
+      "--help"      |  "-h"  )    NEEDHELP="Y"  ;; 
+      "--verbose"   |  "-v"  )  LFCRECCP_V="Y"  ;;
+    esac
+  done
+}
+
+show_usage()
+{
+  echo "lcg-rec-cp"
+  echo "----------"
+  echo "LCG utils based recursive copy from file catalog utility"
+  echo " "
+  echo "Usage: `basename $0` -vo <voname> -cp <catalog_path> -lp <local_filepath> [-fc <file_catalog>] [-s <num streams>] [-v] [-nc] [-dr]"
+  echo " "
+  echo "        --vo | -vo  Virtual Organization"
+  echo "        --cp | -cp  Catalog Path"
+  echo "        --lp | -lp  Local Path"
+  echo "        --fc | -fc  File Catalog"
+  echo "   --streams | -s   Number of parallel strams"  
+  echo "   --verbose | -v   Shows info and commands executed"    
+  echo " --noclobber | -nc  No clobber, avoids replacement of existing files"
+  echo "    --dryrun | -dr  View only commands without executing them"     
+  echo "      --help | -h   Shows this help" 
+  echo " "
+}
+
+#check arguments
+check_arguments()
+{
+  if [ "${NEEDHELP}" != "Y" ]
+  then
+    ERROR=
+    NEWLN="\n"
+    TABSP="\t"
+    if [ -z "$LFCRECCP_TB" ]
+    then
+      LFCRECCP_TB=0
+    fi
+    if [ -z "${LFCRECCP_FC}" ]
+    then
+      if [ -n "${LFC_HOST}" ]
+      then
+         if [ -n "${LFCRECCP_V}" ]
+         then
+           ERROR=$ERROR$TABSP"Warning: Defafault LFC server: '"$LFC_HOST"' will be used"$NEWLN
+         fi
+      else
+        ERROR=$ERROR$TABSP"LFC_HOST environment variable or -fc option must be specified with a LFC host server"$NEWLN
+        NEEDHELP="Y"
+      fi
+    fi
+    if [ -z "${LFCRECCP_VO}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a virtual organization"$NEWLN
+      NEEDHELP="Y"
+    fi
+    if [ -z "${LFCRECCP_LP}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a local path"$NEWLN
+      NEEDHELP="Y"
+    fi
+    if [ -z "${LFCRECCP_CP}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a catalog path"$NEWLN
+      NEEDHELP="Y"
+    fi
+    
+    if [ -n "${ERROR}"  -a $LFCRECCP_TB -eq 0 ]
+    then
+      echo "Errors:"
+      echo -e $ERROR    
+    fi
+  fi
+}
+
+calc_indlevel()
+{
+  LNTABS=
+  if [ $LFCRECCP_TB -gt 0 ]
+  then
+    for t in $(seq 1 $LFCRECCP_TB)
+    do
+      LNTABS=$LNTABS"\t"
+    done  
+  fi
+}
+
+#
+# lcg-rec-cp 
+#
+
+#parse the command line
+if [ $# -ne 0 ]
+then
+  ARGS=$*
+  parse_arguments
+  check_arguments  
+else
+  NEEDHELP="Y"
+fi
+
+#view verbose summary info
+if [ -n "${LFCRECCP_V}" -a "${LFCRECCP_TB}" == "0" ]
+then
+  echo "lcg-rec-cp"
+  echo "----------"
+  echo "VO          : "$LFCRECCP_VO
+  echo "LFC         : "$LFCRECCP_FC
+  echo "Local path  : "$LFCRECCP_LP
+  echo "Catalog path: "$LFCRECCP_CP
+  echo "Streams     : "$LFCRECCP_S
+  NOVRWT="off"
+  if [ -n "${LFCRECCP_NC}" ]
+  then
+   NOVRWT="on" 
+  fi
+  echo "No overwrite: "$NOVRWT
+  DRMODE="off"
+  if [ -n "${LFCRECCP_DR}" ]
+  then
+   DRMODE="on" 
+  fi
+  echo "Dry run     : "$DRMODE
+  echo " "
+fi
+
+#view help or execute
+if [ $NEEDHELP == "Y" ] 
+then 
+  show_usage
+else
+  if [ -n "${LFCRECCP_DR}" ]
+  then
+    LFCRECCP_V="Y"
+  fi
+  #calculate indirection level
+  calc_indlevel
+  #directory or file
+  FLAG=$(lfc-ls -ld ${LFCRECCP_CP} | awk '{ print substr($1,1,1) }')
+  if [ "${FLAG}" == "d" ]
+  then
+    #create the directory in the local path
+    if [ $LFCRECCP_TB -eq 0 ]
+    then   
+      TMPVAR=$(basename ${LFCRECCP_CP})
+      DIRPATH=$(echo ${LFCRECCP_LP}/$TMPVAR | sed 's/\/\//\//g')    
+    else
+      DIRPATH=$(echo ${LFCRECCP_LP} | sed 's/\/\//\//g')
+    fi
+    #process directories first
+    if [ -n "${LFCRECCP_V}" ]
+    then
+      echo -e $LNTABS"mkdir -p ${DIRPATH}"
+    fi
+    #
+    # mkdir
+    #
+    if [ ! -n "${LFCRECCP_DR}" ]
+    then
+      mkdir -p ${DIRPATH}    
+    fi
+    SUBDIRS=$(lfc-ls -l  ${LFCRECCP_CP} | awk '{ if(substr($1,1,1)=="d") print $9 }')
+    if [ -n "$SUBDIRS" ]
+    then
+      LFCRECCP_TB=$(($LFCRECCP_TB+1))
+    fi
+    for dir in $SUBDIRS
+    do  
+      #prepare arguments for the recursive call to $0    
+      VOPT=
+      if [ -n "${LFCRECCP_V}" ]
+      then        
+        VOPT="-v"
+      fi
+      SOPT=
+      if [ -n "${LFCRECCP_S}" ]
+      then        
+        SOPT="-s "$LFCRECCP_S
+      fi
+      FCOPT=
+      if [ -n "${LFCRECCP_FC}" ]
+      then        
+        FCOPT="-fc "$LFCRECCP_FC
+      fi
+       NCOPT=
+      if [ -n "${LFCRECCP_NC}" ]
+      then        
+        NCOPT="-nc"
+      fi
+      DROPT=
+      if [ -n "${LFCRECCP_DR}" ]
+      then        
+        DROPT="-dr"
+      fi
+      CATALOGPATH=$(echo ${LFCRECCP_CP}/$dir | sed 's/\/\//\//g')
+      LOCALPATH=$(echo ${DIRPATH}/$dir | sed 's/\/\//\//g')
+      #recursive call to $0
+      $0 -vo $LFCRECCP_VO $VOPT $DROPT $NCOPT $SOPT $FCOPT -lp $LOCALPATH -cp $CATALOGPATH -tb $LFCRECCP_TB 
+    done
+    #process files then
+    FILES=$(lfc-ls -l  ${LFCRECCP_CP} | awk '{ if(substr($1,1,1)!="d" && substr($1,1,1)!="l") print $9 }')
+    for file in $FILES
+    do      
+      #prepare PARAMS for lfc-cr
+      FILE=$file
+      lcg_cp_prepare_params
+      if [ -n "${LFCRECCP_V}" -a $DOCMD -eq 1 ]
+      then
+        echo -e $LNTABS"lcg-cp"$PARAMS
+      fi
+      #
+      # lcg-cp
+      #
+      if [ ! -n "${LFCRECCP_DR}" -a $DOCMD -eq 1 ]
+      then
+        lcg-cp $PARAMS      
+      fi
+    done
+  elif [ "${FLAG}" != "d" -a  "${FLAG}" != "l"   ]
+  then
+    lcg_cp_prepare_params
+    if [ -n "${LFCRECCP_V}" -a $DOCMD -eq 1 ]
+    then
+      echo -e $LNTABS"lcg-cp"$PARAMS
+    fi
+    #
+    # lcg-cp
+    #
+    if [ ! -n "${LFCRECCP_DR}" -a $DOCMD -eq 1 ]
+    then
+      lcg-cp $PARAMS  
+    fi
+  else
+    echo "Error: The local path '"$LFCRECCP_LP"' is not valid"
+  fi
+fi
+

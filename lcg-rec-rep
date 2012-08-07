@@ -1,0 +1,264 @@
+#!/bin/sh
+#
+# lcg-rec-rep - Mark Santcroos 20101014 <M.A.Santcroos@amc.uva.nl>
+#
+# Recursive lcg replica based on lcg-rec-del by Riccardo Bruno 20070725 <riccardo.bruno@ct.infn.it>
+#
+# Changelog
+#
+# 20101030 Options: dryrun added
+#
+
+#lcg_rep_prepare_params
+lcg_rep_prepare_params()
+{
+      PARAMS=
+      if [ -n "${LFCRECRP_VO}" ]
+      then
+        PARAMS=$PARAMS" --vo "$LFCRECRP_VO
+      fi
+      if [ -n "${LFCRECRP_CP}" ]
+      then
+        PARAMS=$PARAMS" lfn:"$DIRPATH/$file
+      fi
+      if [ -n "${LFCRECRP_FC}" ]
+      then
+        export LFC_HOST=$LFCRECRP_FC
+      fi
+      if [ -n "${LFCRECRP_SE}" ]
+      then
+        PARAMS=$PARAMS" -d "$LFCRECRP_SE
+      fi
+}
+
+#parse arguments
+parse_arguments()
+{
+  LFCRECRP_VO=
+  LFCRECRP_FC=
+  LFCRECRP_CP=
+  LFCRECRP_V=
+  LFCRECRP_SE=
+  LFCRECRP_DR=
+  LFCRECRP_TB=
+  NEEDHELP="N"
+  PARAM=
+  for opt in $ARGS
+  do 
+    OPTSIGN=$(echo ${opt} | awk '{ print substr($1,1,1) }') 
+    if [ -n "${PARAM}" -a "${OPTSIGN}" != "-"  ]
+    then
+      case $PARAM in
+        "TB" ) LFCRECRP_TB=$opt ;;
+        "VO" ) LFCRECRP_VO=$opt ;;
+        "CP" ) LFCRECRP_CP=$opt ;;
+        "FC" ) LFCRECRP_FC=$opt ;;        
+        "SE" ) LFCRECRP_SE=$opt ;;
+      esac 
+      PARAM=
+    fi
+    case $opt in
+      "--tb"      | "-tb"  ) PARAM="TB"      ;;
+      "--vo"      | "-vo"  ) PARAM="VO"      ;;
+      "--se"      | "-se"  ) PARAM="SE"      ;;
+      "--cp"      | "-cp"  ) PARAM="CP"      ;;
+      "--fc"      | "-fc"  ) PARAM="FC"      ;; 
+      "--dryrun"  | "-dr"  ) LFCRECRP_DR="Y" ;;     
+      "--help"    | "-h"   ) NEEDHELP="Y"    ;; 
+      "--verbose" | "-v"   ) LFCRECRP_V="Y"  ;;
+    esac
+  done
+}
+
+show_usage()
+{
+  echo "lcg-rec-rep"
+  echo "----------"
+  echo "LCG utils based recursive add replicas for a file already in the lfc"
+  echo " "
+  echo "Usage: `basename $0` -vo <voname> -cp <catalog_path> -se <storage element> [-fc <file_catalog>] [-v] [-dr]"
+  echo " "
+  echo "        --vo | -vo  Virtual Organization"
+  echo "        --cp | -cp  Catalog Path"
+  echo "        --se | -se  Storage element"
+  echo "        --fc | -fc  File Catalog"
+  echo "   --verbose | -v   Shows info and commands executed"
+  echo "    --dryrun | -dr  View only commands without executing them"     
+  echo "      --help | -h   Shows this help" 
+  echo " "
+}
+
+#check arguments
+check_arguments()
+{
+  if [ "${NEEDHELP}" != "Y" ]
+  then
+    ERROR=
+    NEWLN="\n"
+    TABSP="\t"
+    if [ -z "$LFCRECRP_TB" ]
+    then
+      LFCRECRP_TB=0
+    fi
+    if [ -z "${LFCRECRP_FC}" ]
+    then
+      if [ -n "${LFC_HOST}" ]
+      then
+         if [ -n "${LFCRECRP_V}" ]
+         then
+           ERROR=$ERROR$TABSP"Warning: Default LFC server: '"$LFC_HOST"' will be used"$NEWLN
+         fi
+      else
+        ERROR=$ERROR$TABSP"LFC_HOST environment variable or -fc option must be specified with a LFC host server"$NEWLN
+        NEEDHELP="Y"
+      fi
+    fi
+    if [ -z "${LFCRECRP_VO}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a virtual organization"$NEWLN
+     NEEDHELP="Y"
+    fi
+    if [ -z "${LFCRECRP_CP}" ]
+    then
+      ERROR=$ERROR$TABSP"you must specify a catalog path"$NEWLN
+      NEEDHELP="Y"
+    fi
+    if [ -n "${ERROR}"  -a $LFCRECRP_TB -eq 0 ]
+    then
+      echo "Errors:"
+      echo -e $ERROR    
+    fi
+  fi
+}
+
+calc_indlevel()
+{
+  LNTABS=
+  if [ $LFCRECRP_TB -gt 0 ]
+  then
+    for t in $(seq 1 $LFCRECRP_TB)
+    do
+      LNTABS=$LNTABS"\t"
+    done  
+  fi
+}
+
+#
+# lcg-rec-rep
+#
+
+#parse the command line
+if [ $# -ne 0 ]
+then
+  ARGS=$*
+  parse_arguments
+  check_arguments  
+else
+  NEEDHELP="Y"
+fi
+
+#view verbose summary info
+if [ -n "${LFCRECRP_V}" -a "${LFCRECRP_TB}" == "0" ]
+then
+  echo "lcg-rec-rep"
+  echo "----------"
+  echo "VO           : "$LFCRECRP_VO
+  echo "LFC          : "$LFCRECRP_FC
+  echo "Catalog path : "$LFCRECRP_CP
+  echo "SE           : "$LFCRECRP_SE
+  DRMODE="off"
+  if [ -n "${LFCRECRP_DR}" ]
+  then
+   DRMODE="on" 
+  fi
+  echo "Dry run      : "$DRMODE
+  echo " "
+fi
+
+#view help or execute
+if [ $NEEDHELP == "Y" ] 
+then 
+  show_usage
+else
+  if [ -n "${LFCRECRP_DR}" ]
+  then
+    LFCRECRP_V="Y"
+  fi
+  #calculate indirection level
+  calc_indlevel
+  #directory or file
+  FLAG=$(lfc-ls -ld ${LFCRECRP_CP} | awk '{ print substr($1,1,1) }')
+  if [ "${FLAG}" == "d" ]
+  then
+    DIRPATH=$(echo ${LFCRECRP_CP} | sed 's/\/\//\//g')
+    
+    #process files before
+    FILES=$(lfc-ls -l  ${LFCRECRP_CP} | awk '{ if(substr($1,1,1)!="d" && substr($1,1,1)!="l") print $9 }')
+    for file in $FILES
+    do      
+      #prepare PARAMS for lcg-rep
+      lcg_rep_prepare_params
+      if [ -n "${LFCRECRP_V}" ]
+      then
+        echo -e $LNTABS"lcg-rep "$PARAMS
+      fi
+      #
+      # lcg-rep
+      #
+      if [ ! -n "${LFCRECRP_DR}" ]
+      then
+        lcg-rep $PARAMS      
+      fi
+    done
+    
+    #replicate directories then
+    SUBDIRS=$(lfc-ls -l  ${LFCRECRP_CP} | awk '{ if(substr($1,1,1)=="d") print $9 }')
+    if [ -n "$SUBDIRS" ]
+    then
+      LFCRECRP_TB=$(($LFCRECRP_TB+1))
+    fi
+    for dir in $SUBDIRS
+    do  
+      #prepare arguments for the recursive call to $0    
+      VOPT=
+      if [ -n "${LFCRECRP_V}" ]
+      then        
+        VOPT="-v"
+      fi
+      FCOPT=
+      if [ -n "${LFCRECRP_FC}" ]
+      then        
+        FCOPT="-fc "$LFCRECRP_FC
+      fi
+      SEOPT=
+      if [ -n "${LFCRECRP_SE}" ]
+      then 
+        SEOPT="-se "${LFCRECRP_SE}
+      fi
+      if [ -n "${LFCRECRP_DR}" ]
+      then        
+        DROPT="-dr"
+      fi
+      CATALOGPATH=$(echo ${LFCRECRP_CP}/$dir | sed 's/\/\//\//g')
+      LOCALPATH=$(echo ${DIRPATH}/$dir | sed 's/\/\//\//g')
+      #recursive call to $0
+      $0 -vo $LFCRECRP_VO $VOPT $DROPT $FCOPT $SEOPT -lp $LOCALPATH -cp $CATALOGPATH -tb $LFCRECRP_TB 
+    done
+  elif [ "${FLAG}" != "d" -a  "${FLAG}" != "l" ]
+  then
+    lcg_rep_prepare_params
+    if [ -n "${LFCRECRP_V}" ]
+    then
+      echo -e $LNTABS"lcg-cp"$PARAMS
+    fi
+    #
+    # lcg-rep
+    #
+    if [ ! -n "${LFCRECRP_DR}" ]
+    then
+      lcg-rep $PARAMS  
+    fi
+  else
+    echo "Error: The catalog path '"$LFCRECRP_CP"' is not valid"
+  fi
+fi
