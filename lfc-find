@@ -1,0 +1,83 @@
+#!/bin/sh
+#
+# lfc-find - Riccardo Bruno 20131008
+#
+# Find command on LFC
+#
+LFC_PATH=$1
+FLAG_FILESONLY="N"
+FLAG_DIRSONLY="N"
+FLAG_EXIT=0
+CMD=$(basename $0)
+ARG=$(echo $1 | tr '[A-Z]' '[a-z]')
+ARGC=0
+SKIPARG=0
+for arg in $*
+do
+  ARG=$(echo $arg | tr '[A-Z]' '[a-z]')
+  if [ $SKIPARG -ne 0 ]
+  then
+    SKIPARG=0
+    ARGC=$((ARGC+1))
+    continue
+  elif [ "${ARG}" = "" -o "${ARG}" == "-help" -o "${ARG}" == "--help" -o "${ARG}" == "-h" ]
+  then
+    echo "Usage $CMD <lfn_path> [-d] [-f]"
+    echo "List the whole directory structure from the catalog"
+    echo "Options:"
+    echo "    -d | --dirs                 Show only directories"
+    echo "    -f | --files                Show only files"
+    echo "    -l | --lfc_host <LFC host>  Sets the given file catalog host"
+    echo "    -h | --help                 Show this help"
+    FLAG_EXIT=1
+  elif [ "${ARG}" = "-f" -o "${ARG}" = "--files" ]
+  then
+    FLAG_FILESONLY="Y"
+    echo "Setting files only flag" >&2
+  elif [ "${ARG}" = "-d" -o "${ARG}" = "--dirs" ]
+  then
+    FLAG_DIRSONLY="Y"
+    echo "Setting directories only flag" >&2
+  elif [ "${ARG}" = "-l" -o "${ARG}" = "--lfc_host" ]
+  then
+    ARGC1=0
+    LHARGPLACE=$((ARGC+1))
+    for arg1 in $*
+    do
+      if [ $LHARGPLACE -eq $ARGC1 ]; then
+        LFC_HOST=$arg1
+        SKIPARG=1
+      fi
+      ARGC1=$((ARGC1+1))
+    done
+    echo "Setting LFC host to '$LFC_HOST'" >&2
+  fi
+  ARGC=$((ARGC+1))
+done
+
+if [ $FLAG_EXIT -ne 0 ]; then
+  exit 0
+fi
+
+TMPFILE=$(mktemp)
+lfc-ls -l $1 > $TMPFILE
+while read line
+do
+  DIRFLAG=$(echo $line | awk '{ print $1 }' | grep d)
+  if [ "${DIRFLAG}" != "" ]; then
+    # directoty
+    DIRNAME=$(echo $line | awk '{ print $9}')
+    #if [ "${FLAG_FILESONLY}" = "Y" ]; then
+    #  echo $DIRNAME/
+    #fi
+    $0 $1/$DIRNAME
+  else
+    # file
+    FILENAME=$(echo $line | awk '{ print $9}')
+    if [ $FLAG_DIRSONLY = "N" ]
+    then
+      echo $1/$FILENAME
+    fi
+  fi
+done < $TMPFILE
+rm -f $TMPFILE
